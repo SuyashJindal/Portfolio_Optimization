@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
-
+from optimizer import PortfolioManager, Optimizer
 API_URL = "http://127.0.0.1:8000"
 
 st.set_page_config(
@@ -37,6 +37,7 @@ tickers_input = st.sidebar.text_area(
 )
 tickers = [t.strip().upper() for t in tickers_input.split(",") if t.strip()]
 
+# 2. Date Range
 st.sidebar.subheader("📅 Historical Period")
 default_start = datetime.now() - timedelta(days=3*365)
 default_end = datetime.now() - timedelta(days=1)
@@ -54,6 +55,8 @@ with col_d2:
         default_end,
         help="Data end date"
     )
+
+# 3. Method Selection
 st.sidebar.subheader("🎯 Optimization Method")
 method_map = {
     "Max Sharpe (MVO)": "mvo_sharpe",
@@ -74,6 +77,8 @@ method_label = st.sidebar.selectbox(
     help="Choose optimization objective"
 )
 method_key = method_map[method_label]
+
+# 4. Parameters
 st.sidebar.subheader("📈 Risk Parameters")
 rf = st.sidebar.number_input(
     "Risk-Free Rate (%)", 
@@ -133,6 +138,8 @@ sum_one = st.sidebar.checkbox(
 frontier_points = 25  # Fixed for better visualization
 
 st.sidebar.divider()
+
+# === MAIN PAGE ===
 st.markdown('<p class="main-header">📊 Advanced Portfolio Optimizer</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">Professional multi-strategy asset allocation with real-time market data</p>', unsafe_allow_html=True)
 
@@ -511,13 +518,13 @@ if run_button:
 else:
     # === WELCOME SCREEN ===
     st.markdown("""
-    ### 👋 Welcome to the Advanced Portfolio Optimizer
+    ### Welcome to the Advanced Portfolio Optimizer
     
     Professional quantitative asset allocation powered by modern portfolio theory and beyond.
     
     ---
     
-    #### 🎯 Available Optimization Methods:
+    #### Available Optimization Methods:
     
     | Method | Description | Best For |
     |--------|-------------|----------|
@@ -533,7 +540,7 @@ else:
     | **Min Max Drawdown** | Minimize peak decline | Capital preservation |
     
     ---
-
+    
     
     1. **Choose Method**:
        - Pick optimization objective
@@ -544,19 +551,17 @@ else:
        - Min/max position sizes
        - Budget constraint
     
+    ---
+
     
     ---
     
-    #### 📊 What You'll Get:
+    **Ready to optimize?** Configure your portfolio in the sidebar and click **"🚀 RUN OPTIMIZATION"**
     
-    ✅ **Optimized Weights** - Asset allocation with downloadable CSV  
-    ✅ **Performance Metrics** - Sharpe, Sortino, Omega, CVaR, drawdown  
-    ✅ **Cumulative Returns** - Historical backtest visualization  
-    ✅ **Efficient Frontier** - Risk-return tradeoff (MVO methods)  
-    ✅ **Risk Analysis** - Contributions, distributions, drawdowns  
+    """)
+    
     
 
-  
 # === FOOTER ===
 st.divider()
 col_f1, col_f2, col_f3 = st.columns(3)
@@ -566,3 +571,4 @@ with col_f2:
     st.caption("Built with FastAPI + Streamlit")
 with col_f3:
     st.caption("Data: Yahoo Finance")
+
