@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
-from optimizer import PortfolioManager, Optimizer
+
 API_URL = "http://127.0.0.1:8000"
 
 st.set_page_config(
@@ -15,7 +15,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
 st.markdown("""
 <style>
     .stMetric {background-color: #f0f2f6; padding: 10px; border-radius: 5px;}
@@ -23,12 +22,8 @@ st.markdown("""
     .sub-header {font-size: 1.1rem; color: #666; margin-bottom: 20px;}
 </style>
 """, unsafe_allow_html=True)
-
-# === SIDEBAR: INPUTS ===
-st.sidebar.title("⚙️ Configuration")
-
-# 1. Assets
-st.sidebar.subheader("📊 Portfolio Assets")
+st.sidebar.title("Configuration")
+st.sidebar.subheader("Portfolio Assets")
 tickers_input = st.sidebar.text_area(
     "Tickers (comma separated)", 
     "AAPL,MSFT,GOOGL,AMZN,JPM,JNJ",
@@ -37,8 +32,7 @@ tickers_input = st.sidebar.text_area(
 )
 tickers = [t.strip().upper() for t in tickers_input.split(",") if t.strip()]
 
-# 2. Date Range
-st.sidebar.subheader("📅 Historical Period")
+st.sidebar.subheader(" Historical Period")
 default_start = datetime.now() - timedelta(days=3*365)
 default_end = datetime.now() - timedelta(days=1)
 
@@ -55,9 +49,7 @@ with col_d2:
         default_end,
         help="Data end date"
     )
-
-# 3. Method Selection
-st.sidebar.subheader("🎯 Optimization Method")
+st.sidebar.subheader(" Optimization Method")
 method_map = {
     "Max Sharpe (MVO)": "mvo_sharpe",
     "Min Variance (MVO)": "mvo_min_vol",
@@ -77,9 +69,7 @@ method_label = st.sidebar.selectbox(
     help="Choose optimization objective"
 )
 method_key = method_map[method_label]
-
-# 4. Parameters
-st.sidebar.subheader("📈 Risk Parameters")
+st.sidebar.subheader("Risk Parameters")
 rf = st.sidebar.number_input(
     "Risk-Free Rate (%)", 
     0.0, 20.0, 4.0, 0.5,
@@ -138,10 +128,8 @@ sum_one = st.sidebar.checkbox(
 frontier_points = 25  # Fixed for better visualization
 
 st.sidebar.divider()
-
-# === MAIN PAGE ===
-st.markdown('<p class="main-header">📊 Advanced Portfolio Optimizer</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Professional multi-strategy asset allocation with real-time market data</p>', unsafe_allow_html=True)
+st.markdown('<p class="main-header">Advanced Portfolio Optimizer</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Multi-strategy asset allocation with real-time market data</p>', unsafe_allow_html=True)
 
 # Info boxes
 col_info1, col_info2, col_info3, col_info4 = st.columns(4)
@@ -165,11 +153,11 @@ if run_button:
     # Validation
     errors = []
     if len(tickers) < 2:
-        errors.append("⚠️ Enter at least 2 tickers")
+        errors.append(" Enter at least 2 tickers")
     if start_date >= end_date:
-        errors.append("⚠️ Start date must be before end date")
+        errors.append(" Start date must be before end date")
     if max_w < min_w:
-        errors.append("⚠️ Max weight must be ≥ Min weight")
+        errors.append(" Max weight must be ≥ Min weight")
     
     if errors:
         for error in errors:
@@ -192,7 +180,7 @@ if run_button:
         "frontier_points": frontier_points
     }
 
-    with st.spinner("🔄 Fetching data and optimizing portfolio..."):
+    with st.spinner(" Fetching data and optimizing portfolio..."):
         try:
             # === MAIN OPTIMIZATION ===
             resp = requests.post(f"{API_URL}/optimize", json=payload, timeout=120)
@@ -212,10 +200,10 @@ if run_button:
             chart_values = [chart_data_dict[d] for d in chart_dates]
             chart_series = pd.Series(chart_values, index=pd.to_datetime(chart_dates))
             
-            st.success("✅ Optimization Complete!")
+            st.success(" Optimization Complete!")
             
             # === SECTION 1: WEIGHTS TABLE ===
-            st.subheader("💼 Optimized Portfolio Weights")
+            st.subheader(" Optimized Portfolio Weights")
             
             col1, col2 = st.columns([3, 2])
             
@@ -240,7 +228,7 @@ if run_button:
                 # Download button
                 csv = df_weights.to_csv(index=False)
                 st.download_button(
-                    "📥 Download Weights (CSV)",
+                    " Download Weights (CSV)",
                     csv,
                     f"portfolio_weights_{method_key}.csv",
                     "text/csv",
@@ -469,7 +457,7 @@ if run_button:
             
             with viz_col2:
                 # === RETURNS DISTRIBUTION ===
-                st.subheader("📊 Returns Distribution")
+                st.subheader(" Returns Distribution")
                 
                 # Calculate daily returns
                 daily_rets = chart_series.pct_change().dropna() * 100
@@ -481,8 +469,6 @@ if run_button:
                     name='Daily Returns',
                     marker=dict(color='skyblue', line=dict(color='darkblue', width=1))
                 ))
-                
-                # Add normal distribution overlay
                 mean_ret = daily_rets.mean()
                 std_ret = daily_rets.std()
                 
@@ -500,18 +486,18 @@ if run_button:
                                   annotation_text="Mean", annotation_position="top")
                 
                 st.plotly_chart(fig_hist, use_container_width=True)
-                st.caption(f"📈 Mean: {mean_ret:.3f}% | Std Dev: {std_ret:.3f}%")
+                st.caption(f" Mean: {mean_ret:.3f}% | Std Dev: {std_ret:.3f}%")
             
             # === JSON OUTPUT ===
-            with st.expander("📄 View Full JSON Response"):
+            with st.expander(" View Full JSON Response"):
                 st.json(data)
 
         except requests.exceptions.Timeout:
-            st.error("⏱️ Request timeout. Try:\n- Shorter date range\n- Fewer assets\n- Different optimization method")
+            st.error(" Request timeout. Try:\n- Shorter date range\n- Fewer assets\n- Different optimization method")
         except requests.exceptions.ConnectionError:
-            st.error("🔌 Cannot connect to API. Ensure backend is running:\n```\npython main.py\n```")
+            st.error(" Cannot connect to API. Ensure backend is running:\n```\npython main.py\n```")
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+            st.error(f" Error: {str(e)}")
             with st.expander("🐛 Debug Info"):
                 st.exception(e)
 
@@ -519,12 +505,11 @@ else:
     # === WELCOME SCREEN ===
     st.markdown("""
     ### Welcome to the Advanced Portfolio Optimizer
-    
-    Professional quantitative asset allocation powered by modern portfolio theory and beyond.
+                Assignment by Suyash Jindal
     
     ---
     
-    #### Available Optimization Methods:
+    ####  Available Optimization Methods:
     
     | Method | Description | Best For |
     |--------|-------------|----------|
@@ -541,34 +526,55 @@ else:
     
     ---
     
+    #### Quick Start Guide:
     
-    1. **Choose Method**:
+    1. **Configure Portfolio** (left sidebar):
+       - Enter 2+ tickers (e.g., `AAPL,MSFT,GOOGL,AMZN,JPM,JNJ`)
+       - Select date range (3+ years recommended)
+    
+    2. **Choose Method**:
        - Pick optimization objective
        - Adjust risk parameters (risk-free rate, MAR, confidence)
     
-    2. **Set Constraints**:
+    3. **Set Constraints**:
        - Long-only vs. long-short
        - Min/max position sizes
        - Budget constraint
     
+    4. **Run Optimization**:
+       - Click "🚀 RUN OPTIMIZATION"
+       - View results in ~5-15 seconds
+    
     ---
+    
+    
+        **Optimized Weights** - Asset allocation with downloadable CSV  
+        **Performance Metrics** - Sharpe, Sortino, Omega, CVaR, drawdown  
+        **Cumulative Returns** - Historical backtest visualization  
+        **Efficient Frontier** - Risk-return tradeoff (MVO methods)  
+        **Risk Analysis** - Contributions, distributions, drawdowns  
+    
 
     
-    ---
+    #### Configuration in Sidebar →
     
-    **Ready to optimize?** Configure your portfolio in the sidebar and click **"🚀 RUN OPTIMIZATION"**
+    **Ready to optimize?** Configure your portfolio in the sidebar and click **"RUN OPTIMIZATION"**
     
     """)
+    st.info("""
+    ** Try These Sample Portfolios:**
     
-    
+    - **Tech Growth**: `AAPL,MSFT,GOOGL,AMZN,NVDA,META`
+    - **Balanced**: `SPY,TLT,GLD,VNQ,DBC,AGG
+    """)
 
-# === FOOTER ===
 st.divider()
 col_f1, col_f2, col_f3 = st.columns(3)
 with col_f1:
-    st.caption("📈 Portfolio Optimizer v1.0")
+    st.caption("Portfolio Optimizer v1.0")
 with col_f2:
     st.caption("Built with FastAPI + Streamlit")
 with col_f3:
     st.caption("Data: Yahoo Finance")
+
 
