@@ -37,7 +37,6 @@ tickers_input = st.sidebar.text_area(
 )
 tickers = [t.strip().upper() for t in tickers_input.split(",") if t.strip()]
 
-# 2. Date Range
 st.sidebar.subheader("📅 Historical Period")
 default_start = datetime.now() - timedelta(days=3*365)
 default_end = datetime.now() - timedelta(days=1)
@@ -55,8 +54,6 @@ with col_d2:
         default_end,
         help="Data end date"
     )
-
-# 3. Method Selection
 st.sidebar.subheader("🎯 Optimization Method")
 method_map = {
     "Max Sharpe (MVO)": "mvo_sharpe",
@@ -77,8 +74,6 @@ method_label = st.sidebar.selectbox(
     help="Choose optimization objective"
 )
 method_key = method_map[method_label]
-
-# 4. Parameters
 st.sidebar.subheader("📈 Risk Parameters")
 rf = st.sidebar.number_input(
     "Risk-Free Rate (%)", 
@@ -138,8 +133,6 @@ sum_one = st.sidebar.checkbox(
 frontier_points = 25  # Fixed for better visualization
 
 st.sidebar.divider()
-
-# === MAIN PAGE ===
 st.markdown('<p class="main-header">📊 Advanced Portfolio Optimizer</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">Professional multi-strategy asset allocation with real-time market data</p>', unsafe_allow_html=True)
 
@@ -540,25 +533,17 @@ else:
     | **Min Max Drawdown** | Minimize peak decline | Capital preservation |
     
     ---
+
     
-    #### 🚀 Quick Start Guide:
-    
-    1. **Configure Portfolio** (left sidebar):
-       - Enter 2+ tickers (e.g., `AAPL,MSFT,GOOGL,AMZN,JPM,JNJ`)
-       - Select date range (3+ years recommended)
-    
-    2. **Choose Method**:
+    1. **Choose Method**:
        - Pick optimization objective
        - Adjust risk parameters (risk-free rate, MAR, confidence)
     
-    3. **Set Constraints**:
+    2. **Set Constraints**:
        - Long-only vs. long-short
        - Min/max position sizes
        - Budget constraint
     
-    4. **Run Optimization**:
-       - Click "🚀 RUN OPTIMIZATION"
-       - View results in ~5-15 seconds
     
     ---
     
@@ -570,34 +555,8 @@ else:
     ✅ **Efficient Frontier** - Risk-return tradeoff (MVO methods)  
     ✅ **Risk Analysis** - Contributions, distributions, drawdowns  
     
-    ---
-    
-    #### 💡 Pro Tips:
-    
-    - Use **3+ years** of data for stable covariance estimates
-    - For **benchmark methods** (Tracking Error, Info Ratio), specify benchmark ticker
-    - Enable **"Long Only"** to prevent short positions
-    - **Risk Parity** works well with diverse asset classes (stocks, bonds, commodities)
-    - **CVaR** and **Max Drawdown** are conservative for risk-averse investors
-    
-    ---
-    
-    #### ⚙️ Configuration in Sidebar →
-    
-    **Ready to optimize?** Configure your portfolio in the sidebar and click **"🚀 RUN OPTIMIZATION"**
-    
-    """)
-    
-    # Sample portfolios
-    st.info("""
-    **📚 Try These Sample Portfolios:**
-    
-    - **Tech Growth**: `AAPL,MSFT,GOOGL,AMZN,NVDA,META`
-    - **Balanced**: `SPY,TLT,GLD,VNQ,DBC,AGG`
-    - **Dividend**: `VYM,SCHD,VIG,DVY,HDV,DGRO`
-    - **All-Weather**: `SPY,TLT,IEF,GLD,DBC`
-    """)
 
+  
 # === FOOTER ===
 st.divider()
 col_f1, col_f2, col_f3 = st.columns(3)
