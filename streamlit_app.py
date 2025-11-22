@@ -440,7 +440,7 @@ sum_one = st.sidebar.checkbox(
     help="Full investment constraint"
 )
 
-frontier_points = 25  # Fixed for better visualization
+frontier_points = 25
 
 st.sidebar.divider()
 
@@ -451,14 +451,14 @@ st.markdown('<p class="sub-header">Professional multi-strategy asset allocation 
 # Info boxes
 col_info1, col_info2, col_info3, col_info4 = st.columns(4)
 with col_info1:
-    st.metric("Method", method_label.split("(")[0].strip(), help="Optimization objective")
+    st.metric("Method", method_label.split("(")[0].strip())
 with col_info2:
-    st.metric("Assets", len(tickers), help="Number of securities")
+    st.metric("Assets", len(tickers))
 with col_info3:
     days_diff = (end_date - start_date).days
-    st.metric("Period", f"{days_diff} days", help="Historical data length")
+    st.metric("Period", f"{days_diff} days")
 with col_info4:
-    st.metric("Risk-Free", f"{rf*100:.1f}%", help="Benchmark rate")
+    st.metric("Risk-Free", f"{rf*100:.1f}%")
 
 st.divider()
 
@@ -736,172 +736,13 @@ if run_button:
                     st.subheader("📉 Drawdown Analysis")
                     
                     # Calculate drawdown from cumulative returns
-                    cum_ret_series = chart_series / 100  # Convert back from base 100
+                    cum_ret_series = chart_series / 100
                     running_max = cum_ret_series.cummax()
                     drawdown = (cum_ret_series - running_max) / running_max * 100
                     
                     fig_dd = go.Figure()
                     fig_dd.add_trace(go.Scatter(
                         x=drawdown.index,
-                        y=drawdown.values,
-                        mode='lines',
-                        name='Drawdown',
-                        line=dict(color='red', width=2),
-                        fill='tozeroy',
-                        fillcolor='rgba(255, 0, 0, 0.2)'
-                    ))
-                    
-                    fig_dd.update_layout(
-                        title="Portfolio Drawdown Over Time",
-                        xaxis_title="Date",
-                        yaxis_title="Drawdown (%)",
-                        template='plotly_white',
-                        height=450,
-                        hovermode='x unified'
-                    )
-                    
-                    st.plotly_chart(fig_dd, use_container_width=True)
-                    st.caption(f"📉 Maximum Drawdown: {metrics['Max Drawdown']*100:.2f}%")
-                
-                else:
-                    st.info("💡 Efficient Frontier available for MVO methods\n\n"
-                           "⚖️ Risk Contributions available for Risk Parity\n\n"
-                           "📉 Drawdown chart available for Max Drawdown method")
-            
-            with viz_col2:
-                # === RETURNS DISTRIBUTION ===
-                st.subheader("📊 Returns Distribution")
-                
-                # Calculate daily returns
-                daily_rets = chart_series.pct_change().dropna() * 100
-                
-                fig_hist = go.Figure()
-                fig_hist.add_trace(go.Histogram(
-                    x=daily_rets.values,
-                    nbinsx=50,
-                    name='Daily Returns',
-                    marker=dict(color='skyblue', line=dict(color='darkblue', width=1))
-                ))
-                
-                # Add mean and std dev info
-                mean_ret = daily_rets.mean()
-                std_ret = daily_rets.std()
-                
-                fig_hist.update_layout(
-                    title="Daily Returns Distribution",
-                    xaxis_title="Daily Return (%)",
-                    yaxis_title="Frequency",
-                    template='plotly_white',
-                    height=450,
-                    showlegend=False
-                )
-                
-                # Add vertical line for mean
-                fig_hist.add_vline(x=mean_ret, line_dash="dash", line_color="green", 
-                                  annotation_text="Mean", annotation_position="top")
-                
-                st.plotly_chart(fig_hist, use_container_width=True)
-                st.caption(f"📈 Mean: {mean_ret:.3f}% | Std Dev: {std_ret:.3f}%")
-
-        except ValueError as e:
-            st.error(f"❌ Error: {str(e)}")
-        except Exception as e:
-            st.error(f"❌ Unexpected error: {str(e)}")
-            with st.expander("🛠 Debug Info"):
-                st.exception(e)
-
-else:
-    # === WELCOME SCREEN ===
-    st.markdown("""
-    ### 👋 Welcome to the Advanced Portfolio Optimizer
-    
-    Professional quantitative asset allocation powered by modern portfolio theory and beyond.
-    
-    ---
-    
-    #### 🎯 Available Optimization Methods:
-    
-    | Method | Description | Best For |
-    |--------|-------------|----------|
-    | **Max Sharpe (MVO)** | Maximize risk-adjusted returns | Classic mean-variance optimization |
-    | **Min Variance (MVO)** | Minimize portfolio volatility | Conservative risk management |
-    | **CVaR Minimization** | Minimize tail risk | Downside protection |
-    | **Risk Parity** | Equal risk contribution | Diversified risk allocation |
-    | **Tracking Error Min** | Match benchmark closely | Index tracking |
-    | **Info Ratio Max** | Maximize active returns | Active management |
-    | **Kelly Criterion** | Maximize geometric growth | Long-term compounding |
-    | **Sortino Ratio** | Focus on downside risk | Asymmetric risk preference |
-    | **Omega Ratio** | Probability-weighted returns | Non-normal distributions |
-    | **Min Max Drawdown** | Minimize peak decline | Capital preservation |
-    
-    ---
-    
-    #### 🚀 Quick Start Guide:
-    
-    1. **Configure Portfolio** (left sidebar):
-       - Enter 2+ tickers (e.g., `AAPL,MSFT,GOOGL,AMZN,JPM,JNJ`)
-       - Select date range (3+ years recommended)
-    
-    2. **Choose Method**:
-       - Pick optimization objective
-       - Adjust risk parameters (risk-free rate, MAR, confidence)
-    
-    3. **Set Constraints**:
-       - Long-only vs. long-short
-       - Min/max position sizes
-       - Budget constraint
-    
-    4. **Run Optimization**:
-       - Click "🚀 RUN OPTIMIZATION"
-       - View results in ~5-15 seconds
-    
-    ---
-    
-    #### 📊 What You'll Get:
-    
-    ✅ **Optimized Weights** - Asset allocation with downloadable CSV  
-    ✅ **Performance Metrics** - Sharpe, Sortino, Omega, CVaR, drawdown  
-    ✅ **Cumulative Returns** - Historical backtest visualization  
-    ✅ **Efficient Frontier** - Risk-return tradeoff (MVO methods)  
-    ✅ **Risk Analysis** - Contributions, distributions, drawdowns  
-    
-    ---
-    
-    #### 💡 Pro Tips:
-    
-    - Use **3+ years** of data for stable covariance estimates
-    - For **benchmark methods** (Tracking Error, Info Ratio), specify benchmark ticker
-    - Enable **"Long Only"** to prevent short positions
-    - **Risk Parity** works well with diverse asset classes (stocks, bonds, commodities)
-    - **CVaR** and **Max Drawdown** are conservative for risk-averse investors
-    
-    ---
-    
-    #### ⚙️ Configuration in Sidebar →
-    
-    **Ready to optimize?** Configure your portfolio in the sidebar and click **"🚀 RUN OPTIMIZATION"**
-    
-    """)
-    
-    # Sample portfolios
-    st.info("""
-    **📚 Try These Sample Portfolios:**
-    
-    - **Tech Growth**: `AAPL,MSFT,GOOGL,AMZN,NVDA,META`
-    - **Balanced**: `SPY,TLT,GLD,VNQ,DBC,AGG`
-    - **Dividend**: `VYM,SCHD,VIG,DVY,HDV,DGRO`
-    - **All-Weather**: `SPY,TLT,IEF,GLD,DBC`
-    """)
-
-# === FOOTER ===
-st.divider()
-col_f1, col_f2, col_f3 = st.columns(3)
-with col_f1:
-    st.caption("📈 Portfolio Optimizer v2.0")
-with col_f2:
-    st.caption("Built with Streamlit")
-with col_f3:
-    st.caption("Data: Yahoo Finance")=drawdown.index,
                         y=drawdown.values,
                         mode='lines',
                         name='Drawdown',
