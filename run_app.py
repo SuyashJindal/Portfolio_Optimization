@@ -1,7 +1,3 @@
-"""
-Convenient launcher script for Portfolio Optimizer
-Starts both backend and frontend automatically
-"""
 
 import subprocess
 import sys
@@ -41,7 +37,6 @@ def check_dependencies():
     return True
 
 def check_files():
-    """Check if required files exist"""
     print("📁 Checking files...")
     
     required_files = ['optimizer.py', 'main.py', 'frontend.py']
@@ -55,7 +50,6 @@ def check_files():
     return True
 
 def start_backend():
-    """Start FastAPI backend"""
     print("🚀 Starting Backend API on port 8000...")
     print("-" * 70)
     
@@ -118,7 +112,6 @@ def main():
     print("   • API docs available at http://127.0.0.1:8000/docs")
     print("\n" + "="*70 + "\n")
     
-    # Start backend in separate thread
     backend_thread = Thread(target=start_backend, daemon=True)
     backend_thread.start()
     
