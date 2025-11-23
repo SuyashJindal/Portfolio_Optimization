@@ -12,7 +12,7 @@ pandas==2.2.0
 scipy==1.13.0
 
 # Market Data
-yfinance==0.2.36
+yfinance>=0.2.50
 
 # Visualization
 plotly==5.18.0
