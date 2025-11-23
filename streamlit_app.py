@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import yfinance as yf
 from scipy.optimize import minimize
 from typing import Dict, List, Tuple, Optional
+import matplotlib
 import time  # <--- CRITICAL IMPORT FOR RETRIES
 
 # ============================================================================
