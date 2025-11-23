@@ -145,23 +145,33 @@ class PortfolioManager:
         }
         
         # Benchmark-relative metrics
-        if benchmark_rets is not None and len(benchmark_rets) > 0:
+        if benchmark_rets is not None:
             try:
-                # Align indices
-                common_idx = port_rets.index.intersection(benchmark_rets.index)
-                if len(common_idx) > 10:  # Need reasonable amount of data
-                    port_aligned = port_rets.loc[common_idx]
-                    bench_aligned = benchmark_rets.loc[common_idx]
-                    
-                    active_ret = port_aligned - bench_aligned
-                    tracking_error = active_ret.std() * np.sqrt(252)
-                    
-                    if tracking_error > 1e-10:
-                        info_ratio = (active_ret.mean() * 252) / tracking_error
-                        metrics["Tracking Error"] = round(tracking_error, 4)
-                        metrics["Information Ratio"] = round(info_ratio, 4)
+                # Check if benchmark_rets is empty using pandas method
+                if isinstance(benchmark_rets, pd.Series) and not benchmark_rets.empty:
+                    # Align indices
+                    common_idx = port_rets.index.intersection(benchmark_rets.index)
+                    if len(common_idx) > 10:  # Need reasonable amount of data
+                        port_aligned = port_rets.loc[common_idx]
+                        bench_aligned = benchmark_rets.loc[common_idx]
+                        
+                        # Convert to numpy for safe operations
+                        port_vals = port_aligned.values
+                        bench_vals = bench_aligned.values
+                        
+                        # Calculate active returns
+                        active_ret = port_vals - bench_vals
+                        
+                        # Calculate tracking error and info ratio
+                        tracking_error = float(np.std(active_ret) * np.sqrt(252))
+                        
+                        if tracking_error > 1e-10:
+                            info_ratio = float((np.mean(active_ret) * 252) / tracking_error)
+                            metrics["Tracking Error"] = round(tracking_error, 4)
+                            metrics["Information Ratio"] = round(info_ratio, 4)
             except Exception as e:
-                st.warning(f"Could not calculate benchmark metrics: {str(e)}")
+                # Silently skip benchmark metrics if there's an error
+                pass
         
         return metrics
 
