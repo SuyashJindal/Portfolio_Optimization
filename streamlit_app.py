@@ -16,91 +16,69 @@ class PortfolioManager:
     """Handles data fetching and metric calculations."""
     
     @staticmethod
+    @st.cache_data(ttl=3600, show_spinner=False) # <--- ADD THIS DECORATOR
     def get_data(tickers: List[str], start: str, end: str, benchmark: Optional[str] = None) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
-        """Fetch historical price data with retry logic for stability."""
-        max_retries = 3
-        data = pd.DataFrame()
-        bench_data = None
+        """Fetch historical price data with caching to prevent IP bans."""
         
-        # --- FETCH ASSETS WITH RETRY LOGIC ---
-        for attempt in range(max_retries):
-            try:
-                # auto_adjust=False ensures we get 'Adj Close' if available, or 'Close'
-                data = yf.download(tickers, start=start, end=end, progress=False, auto_adjust=False)
-                
-                # Check if data is actually empty (yfinance sometimes returns empty df without error)
-                if not data.empty:
-                    break
-                
-                time.sleep(1) # Wait 1 second before retrying
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise ValueError(f"Failed to download data after {max_retries} attempts: {str(e)}")
-                time.sleep(1)
-
-        if data.empty:
-            raise ValueError("No data fetched. Check internet connection or Ticker spelling.")
-
-        # --- PROCESS ASSET DATA ---
-        # Handle MultiIndex headers (common in new yfinance versions)
-        if isinstance(data.columns, pd.MultiIndex):
-            # If MultiIndex, try to access 'Adj Close'
-            try:
-                data = data['Adj Close']
-            except KeyError:
-                try:
-                    data = data['Close']
-                except KeyError:
-                    raise ValueError("Could not find 'Adj Close' or 'Close' price data.")
-        else:
-            # Single level columns
-            if 'Adj Close' in data.columns:
-                data = data['Adj Close']
-            elif 'Close' in data.columns:
-                data = data['Close']
-        
-        # Handle Single Ticker (Series -> DataFrame)
-        if isinstance(data, pd.Series):
-            data = data.to_frame()
-            if len(tickers) == 1:
-                data.columns = tickers
-
-        # --- FETCH BENCHMARK (OPTIONAL) ---
+        # 1. Standardize Tickers (remove spaces, uppercase)
+        tickers = [t.strip().upper() for t in tickers]
         if benchmark:
-            for attempt in range(max_retries):
+            benchmark = benchmark.strip().upper()
+
+        # 2. Fetch Assets
+        try:
+            # group_by='ticker' ensures consistent formatting even for 1 ticker
+            data = yf.download(tickers, start=start, end=end, progress=False, group_by='ticker', auto_adjust=False)
+        except Exception as e:
+            raise ValueError(f"Connection error to Yahoo Finance: {e}")
+
+        # 3. Validate Data
+        if data.empty:
+            raise ValueError("Yahoo Finance returned no data. You may be rate-limited. Try again in 5 minutes.")
+
+        # 4. Extract 'Adj Close' or 'Close'
+        # Handle the MultiIndex structure returned by yf.download
+        price_data = pd.DataFrame()
+        
+        # If we have multiple tickers, data columns are (Ticker, PriceType)
+        if len(tickers) > 1:
+            for t in tickers:
                 try:
-                    bench_df = yf.download(benchmark, start=start, end=end, progress=False, auto_adjust=False)
-                    if not bench_df.empty:
-                        # Process Benchmark Data
-                        if isinstance(bench_df.columns, pd.MultiIndex):
-                            try:
-                                b_close = bench_df['Adj Close']
-                            except KeyError:
-                                b_close = bench_df['Close']
-                        else:
-                            if 'Adj Close' in bench_df.columns:
-                                b_close = bench_df['Adj Close']
-                            elif 'Close' in bench_df.columns:
-                                b_close = bench_df['Close']
-                            else:
-                                b_close = bench_df.iloc[:, 0]
+                    # Try to get Adj Close, fail over to Close
+                    if ('Adj Close', t) in data.columns: # Check older yfinance format
+                         price_data[t] = data['Adj Close'][t]
+                    elif (t, 'Adj Close') in data.columns: # Check newer yfinance format
+                        price_data[t] = data[t]['Adj Close']
+                    elif (t, 'Close') in data.columns:
+                        price_data[t] = data[t]['Close']
+                except KeyError:
+                    continue
+        else:
+            # Single ticker case
+            t = tickers[0]
+            if 'Adj Close' in data.columns:
+                price_data[t] = data['Adj Close']
+            elif 'Close' in data.columns:
+                price_data[t] = data['Close']
 
-                        # Ensure it's a Series
-                        if isinstance(b_close, pd.DataFrame):
-                            b_close = b_close.squeeze()
-                        
-                        b_close = b_close.rename(benchmark)
-                        
-                        # Align data
-                        data = data.join(b_close, how='inner')
-                        bench_data = data[benchmark]
-                        data = data.drop(columns=[benchmark])
-                        break
-                except Exception:
-                    pass # Benchmark failure shouldn't crash the app, just ignore it
+        if price_data.empty:
+             raise ValueError(f"Could not parse price data for: {tickers}")
 
-        return data.dropna(), bench_data
+        # 5. Fetch Benchmark (Optional)
+        bench_series = None
+        if benchmark:
+            try:
+                b_data = yf.download(benchmark, start=start, end=end, progress=False, auto_adjust=False)
+                if not b_data.empty:
+                    if 'Adj Close' in b_data.columns:
+                        bench_series = b_data['Adj Close']
+                    elif 'Close' in b_data.columns:
+                        bench_series = b_data['Close']
+            except Exception:
+                pass # Fail silently on benchmark to avoid crashing app
 
+        return price_data.dropna(), bench_series
+  
     @staticmethod
     def get_metrics(weights: np.ndarray, returns: pd.DataFrame, rf: float = 0.0, 
                     mar: float = 0.0, benchmark_rets: Optional[pd.Series] = None, 
