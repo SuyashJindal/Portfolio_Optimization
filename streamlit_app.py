@@ -1,15 +1,15 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import yfinance as yf
 from scipy.optimize import minimize
 from typing import Dict, List, Tuple, Optional
+import time  # <--- CRITICAL IMPORT FOR RETRIES
 
 # ============================================================================
-# PORTFOLIO MANAGER & OPTIMIZER (Merged from optimizer.py)
+# PORTFOLIO MANAGER & OPTIMIZER
 # ============================================================================
 
 class PortfolioManager:
@@ -17,52 +17,89 @@ class PortfolioManager:
     
     @staticmethod
     def get_data(tickers: List[str], start: str, end: str, benchmark: Optional[str] = None) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
-        """Fetch historical price data for assets and optional benchmark."""
-        try:
-            # Fetch Assets
-            data = yf.download(tickers, start=start, end=end, progress=False, auto_adjust=False)
-            
-            if data.empty:
-                raise ValueError("No data fetched. Check internet connection, tickers, or date range.")
+        """Fetch historical price data with retry logic for stability."""
+        max_retries = 3
+        data = pd.DataFrame()
+        bench_data = None
+        
+        # --- FETCH ASSETS WITH RETRY LOGIC ---
+        for attempt in range(max_retries):
+            try:
+                # auto_adjust=False ensures we get 'Adj Close' if available, or 'Close'
+                data = yf.download(tickers, start=start, end=end, progress=False, auto_adjust=False)
+                
+                # Check if data is actually empty (yfinance sometimes returns empty df without error)
+                if not data.empty:
+                    break
+                
+                time.sleep(1) # Wait 1 second before retrying
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise ValueError(f"Failed to download data after {max_retries} attempts: {str(e)}")
+                time.sleep(1)
 
-            # Extract Price Column
+        if data.empty:
+            raise ValueError("No data fetched. Check internet connection or Ticker spelling.")
+
+        # --- PROCESS ASSET DATA ---
+        # Handle MultiIndex headers (common in new yfinance versions)
+        if isinstance(data.columns, pd.MultiIndex):
+            # If MultiIndex, try to access 'Adj Close'
+            try:
+                data = data['Adj Close']
+            except KeyError:
+                try:
+                    data = data['Close']
+                except KeyError:
+                    raise ValueError("Could not find 'Adj Close' or 'Close' price data.")
+        else:
+            # Single level columns
             if 'Adj Close' in data.columns:
                 data = data['Adj Close']
             elif 'Close' in data.columns:
                 data = data['Close']
-            else:
-                raise ValueError(f"Could not find price data. Columns: {data.columns}")
-
-            # Handle Single Ticker (Series to DataFrame)
-            if isinstance(data, pd.Series):
-                data = data.to_frame()
-                if len(tickers) == 1:
-                    data.columns = tickers
-
-            # Fetch Benchmark
-            bench_data = None
-            if benchmark:
-                bench_df = yf.download(benchmark, start=start, end=end, progress=False, auto_adjust=False)
-                if not bench_df.empty:
-                    if 'Adj Close' in bench_df.columns:
-                        b_close = bench_df['Adj Close']
-                    elif 'Close' in bench_df.columns:
-                        b_close = bench_df['Close']
-                    else:
-                        b_close = bench_df.iloc[:, 0]
-                    
-                    if isinstance(b_close, pd.DataFrame):
-                        b_close = b_close.squeeze()
-                    
-                    b_close = b_close.rename(benchmark)
-                    data = data.join(b_close, how='inner')
-                    bench_data = data[benchmark]
-                    data = data.drop(columns=[benchmark])
-            
-            return data.dropna(), bench_data
         
-        except Exception as e:
-            raise ValueError(f"Data fetch error: {str(e)}")
+        # Handle Single Ticker (Series -> DataFrame)
+        if isinstance(data, pd.Series):
+            data = data.to_frame()
+            if len(tickers) == 1:
+                data.columns = tickers
+
+        # --- FETCH BENCHMARK (OPTIONAL) ---
+        if benchmark:
+            for attempt in range(max_retries):
+                try:
+                    bench_df = yf.download(benchmark, start=start, end=end, progress=False, auto_adjust=False)
+                    if not bench_df.empty:
+                        # Process Benchmark Data
+                        if isinstance(bench_df.columns, pd.MultiIndex):
+                            try:
+                                b_close = bench_df['Adj Close']
+                            except KeyError:
+                                b_close = bench_df['Close']
+                        else:
+                            if 'Adj Close' in bench_df.columns:
+                                b_close = bench_df['Adj Close']
+                            elif 'Close' in bench_df.columns:
+                                b_close = bench_df['Close']
+                            else:
+                                b_close = bench_df.iloc[:, 0]
+
+                        # Ensure it's a Series
+                        if isinstance(b_close, pd.DataFrame):
+                            b_close = b_close.squeeze()
+                        
+                        b_close = b_close.rename(benchmark)
+                        
+                        # Align data
+                        data = data.join(b_close, how='inner')
+                        bench_data = data[benchmark]
+                        data = data.drop(columns=[benchmark])
+                        break
+                except Exception:
+                    pass # Benchmark failure shouldn't crash the app, just ignore it
+
+        return data.dropna(), bench_data
 
     @staticmethod
     def get_metrics(weights: np.ndarray, returns: pd.DataFrame, rf: float = 0.0, 
@@ -262,51 +299,57 @@ class Optimizer:
         """Calculate efficient frontier for MVO methods."""
         
         # Get boundary portfolios
-        w_min_vol = np.array(list(self.optimize("mvo_min_vol").values()))
-        w_max_sharpe = np.array(list(self.optimize("mvo_sharpe").values()))
-        
-        # Calculate return range
-        ret_min = np.sum(self.mean_rets * w_min_vol)
-        ret_max = np.sum(self.mean_rets * w_max_sharpe)
-        
-        # Extend range slightly
-        ret_range = ret_max - ret_min
-        ret_min = ret_min - 0.1 * ret_range
-        ret_max = ret_max + 0.3 * ret_range
-        
-        # Generate frontier points
-        target_returns = np.linspace(ret_min, ret_max, num_points)
-        
-        frontier_vol = []
-        frontier_ret = []
-        
-        for target in target_returns:
-            # Create temporary constraints with target return
-            temp_cons = self.cons.copy()
-            temp_cons.append({
-                'type': 'eq', 
-                'fun': lambda x, t=target: np.sum(self.mean_rets * x) - t
-            })
+        try:
+            w_min_vol = np.array(list(self.optimize("mvo_min_vol").values()))
+            w_max_sharpe = np.array(list(self.optimize("mvo_sharpe").values()))
             
-            try:
-                # Minimize volatility for target return
-                res = minimize(
-                    lambda w: np.sqrt(np.dot(w.T, np.dot(self.cov_matrix, w))),
-                    self._get_start_guess(),
-                    method='SLSQP',
-                    bounds=self.bounds,
-                    constraints=temp_cons,
-                    options={'maxiter': 500, 'ftol': 1e-9}
-                )
+            # Calculate return range
+            ret_min = np.sum(self.mean_rets * w_min_vol)
+            ret_max = np.sum(self.mean_rets * w_max_sharpe)
+            
+            # Extend range slightly
+            ret_range = ret_max - ret_min
+            if ret_range == 0: ret_range = 0.01 # Prevent division by zero
+            
+            ret_min = ret_min - 0.1 * ret_range
+            ret_max = ret_max + 0.3 * ret_range
+            
+            # Generate frontier points
+            target_returns = np.linspace(ret_min, ret_max, num_points)
+            
+            frontier_vol = []
+            frontier_ret = []
+            
+            for target in target_returns:
+                # Create temporary constraints with target return
+                temp_cons = self.cons.copy()
+                temp_cons.append({
+                    'type': 'eq', 
+                    'fun': lambda x, t=target: np.sum(self.mean_rets * x) - t
+                })
                 
-                if res.success:
-                    frontier_vol.append(float(res.fun))
-                    frontier_ret.append(float(target))
+                try:
+                    # Minimize volatility for target return
+                    res = minimize(
+                        lambda w: np.sqrt(np.dot(w.T, np.dot(self.cov_matrix, w))),
+                        self._get_start_guess(),
+                        method='SLSQP',
+                        bounds=self.bounds,
+                        constraints=temp_cons,
+                        options={'maxiter': 500, 'ftol': 1e-9}
+                    )
                     
-            except Exception:
-                continue
-        
-        return frontier_vol, frontier_ret
+                    if res.success:
+                        frontier_vol.append(float(res.fun))
+                        frontier_ret.append(float(target))
+                        
+                except Exception:
+                    continue
+            
+            return frontier_vol, frontier_ret
+        except Exception as e:
+            st.warning(f"Frontier calculation skipped: {str(e)}")
+            return [], []
 
 
 # ============================================================================
@@ -673,9 +716,9 @@ if run_button:
                                     ),
                                     name='Selected Portfolio',
                                     hovertemplate='<b>Selected Portfolio</b><br>' +
-                                                'Return: %{y:.2%}<br>' +
-                                                'Volatility: %{x:.2%}<br>' +
-                                                f'Sharpe: {metrics["Sharpe Ratio"]:.3f}<extra></extra>'
+                                                    'Return: %{y:.2%}<br>' +
+                                                    'Volatility: %{x:.2%}<br>' +
+                                                    f'Sharpe: {metrics["Sharpe Ratio"]:.3f}<extra></extra>'
                                 ))
                                 
                                 fig_ef.update_layout(
@@ -765,8 +808,8 @@ if run_button:
                 
                 else:
                     st.info("💡 Efficient Frontier available for MVO methods\n\n"
-                           "⚖️ Risk Contributions available for Risk Parity\n\n"
-                           "📉 Drawdown chart available for Max Drawdown method")
+                            "⚖️ Risk Contributions available for Risk Parity\n\n"
+                            "📉 Drawdown chart available for Max Drawdown method")
             
             with viz_col2:
                 # === RETURNS DISTRIBUTION ===
