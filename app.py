@@ -146,18 +146,22 @@ class PortfolioManager:
         
         # Benchmark-relative metrics
         if benchmark_rets is not None and len(benchmark_rets) > 0:
-            # Align indices
-            common_idx = port_rets.index.intersection(benchmark_rets.index)
-            if len(common_idx) > 0:
-                port_aligned = port_rets.loc[common_idx]
-                bench_aligned = benchmark_rets.loc[common_idx]
-                
-                active_ret = port_aligned - bench_aligned
-                tracking_error = active_ret.std() * np.sqrt(252)
-                info_ratio = (active_ret.mean() * 252) / tracking_error if tracking_error > 0 else 0
-                
-                metrics["Tracking Error"] = round(tracking_error, 4)
-                metrics["Information Ratio"] = round(info_ratio, 4)
+            try:
+                # Align indices
+                common_idx = port_rets.index.intersection(benchmark_rets.index)
+                if len(common_idx) > 10:  # Need reasonable amount of data
+                    port_aligned = port_rets.loc[common_idx]
+                    bench_aligned = benchmark_rets.loc[common_idx]
+                    
+                    active_ret = port_aligned - bench_aligned
+                    tracking_error = active_ret.std() * np.sqrt(252)
+                    
+                    if tracking_error > 1e-10:
+                        info_ratio = (active_ret.mean() * 252) / tracking_error
+                        metrics["Tracking Error"] = round(tracking_error, 4)
+                        metrics["Information Ratio"] = round(info_ratio, 4)
+            except Exception as e:
+                st.warning(f"Could not calculate benchmark metrics: {str(e)}")
         
         return metrics
 
@@ -192,72 +196,121 @@ class Optimizer:
         
         # Objective functions
         def neg_sharpe(w):
-            r = np.sum(self.mean_rets * w)
-            vol = np.sqrt(np.dot(w.T, np.dot(self.cov_matrix, w)))
-            return -(r - self.rf) / (vol + 1e-10)
+            r = float(np.sum(self.mean_rets.values * w))
+            vol = float(np.sqrt(np.dot(w.T, np.dot(self.cov_matrix.values, w))))
+            return float(-(r - self.rf) / (vol + 1e-10))
         
         def min_vol(w):
-            return np.sqrt(np.dot(w.T, np.dot(self.cov_matrix, w)))
+            return float(np.sqrt(np.dot(w.T, np.dot(self.cov_matrix.values, w))))
         
         def neg_sortino(w):
-            p_ret = self.returns.dot(w)
-            mu = p_ret.mean() * 252
+            p_ret = self.returns.values.dot(w)  # Convert to numpy array
+            mu = float(p_ret.mean() * 252)
             downside = p_ret[p_ret < (self.mar/252)]
-            down_std = downside.std() * np.sqrt(252) if len(downside) > 0 else 1e-6
-            return -(mu - self.mar) / down_std
+            down_std = float(downside.std() * np.sqrt(252)) if len(downside) > 0 else 1e-6
+            return float(-(mu - self.mar) / down_std)
         
         def risk_parity(w):
-            p_vol = np.sqrt(np.dot(w.T, np.dot(self.cov_matrix, w)))
+            p_vol = float(np.sqrt(np.dot(w.T, np.dot(self.cov_matrix.values, w))))
             if p_vol < 1e-10:
                 return 1e10
-            mrc = np.dot(self.cov_matrix, w) / p_vol
+            mrc = np.dot(self.cov_matrix.values, w) / p_vol
             rc = w * mrc
             target = p_vol / self.num_assets
-            return np.sum((rc - target)**2)
+            return float(np.sum((rc - target)**2))
         
         def cvar_obj(w):
-            p_ret = self.returns.dot(w)
-            cutoff = np.percentile(p_ret, (1 - confidence) * 100)
-            cvar_val = p_ret[p_ret <= cutoff].mean()
-            return -cvar_val
+            p_ret = self.returns.values.dot(w)  # Convert to numpy array
+            cutoff = float(np.percentile(p_ret, (1 - confidence) * 100))
+            cvar_val = float(p_ret[p_ret <= cutoff].mean())
+            return float(-cvar_val)
         
         def neg_omega(w):
-            p_ret = self.returns.dot(w)
+            p_ret = self.returns.values.dot(w)  # Convert to numpy array
             thresh = self.mar / 252
-            gains = p_ret[p_ret > thresh].sum()
-            losses = abs(p_ret[p_ret < thresh].sum())
-            return -(gains / (losses + 1e-10))
+            gains = float(p_ret[p_ret > thresh].sum())
+            losses = float(abs(p_ret[p_ret < thresh].sum()))
+            return float(-(gains / (losses + 1e-10)))
         
         def neg_kelly(w):
-            port_ret = np.sum(self.mean_rets * w)
-            port_var = np.dot(w.T, np.dot(self.cov_matrix, w))
-            return -(port_ret - 0.5 * port_var)
+            # Kelly Criterion: Maximize E[ln(1+r)] ≈ E[r] - 0.5*Var[r]
+            # This approximation works for small returns
+            try:
+                port_ret = float(np.sum(self.mean_rets.values * w))
+                port_var = float(np.dot(w.T, np.dot(self.cov_matrix.values, w)))
+                
+                # Kelly objective: maximize expected log return
+                kelly_value = port_ret - 0.5 * port_var
+                
+                return float(-kelly_value)
+            except Exception as e:
+                return 1e6
         
         def max_drawdown_obj(w):
-            p_ret = self.returns.dot(w)
-            cum = (1 + p_ret).cumprod()
-            dd = (cum - cum.cummax()) / cum.cummax()
-            return -dd.min()
+            p_ret = self.returns.values.dot(w)  # Convert to numpy array
+            cum = np.cumprod(1 + p_ret)
+            running_max = np.maximum.accumulate(cum)
+            dd = (cum - running_max) / running_max
+            return float(-dd.min())
         
         def tracking_error_obj(w):
-            if self.benchmark_rets is None:
+            if self.benchmark_rets is None or len(self.benchmark_rets) == 0:
                 return 1e6
-            common_idx = self.returns.index.intersection(self.benchmark_rets.index)
-            if len(common_idx) == 0:
+            try:
+                # Align returns with benchmark
+                common_idx = self.returns.index.intersection(self.benchmark_rets.index)
+                if len(common_idx) == 0:
+                    return 1e6
+                
+                # Calculate portfolio returns
+                port_ret = np.dot(self.returns.loc[common_idx].values, w)
+                
+                # Get benchmark returns as numpy array
+                if isinstance(self.benchmark_rets, pd.Series):
+                    bench_ret = self.benchmark_rets.loc[common_idx].values
+                else:
+                    bench_ret = np.array(self.benchmark_rets)
+                
+                # Calculate active returns
+                active = port_ret - bench_ret
+                
+                # Return annualized tracking error
+                return float(np.std(active) * np.sqrt(252))
+            except Exception as e:
                 return 1e6
-            active = self.returns.loc[common_idx].dot(w) - self.benchmark_rets.loc[common_idx]
-            return active.std()
         
         def neg_info_ratio(w):
-            if self.benchmark_rets is None:
+            if self.benchmark_rets is None or len(self.benchmark_rets) == 0:
                 return 1e6
-            common_idx = self.returns.index.intersection(self.benchmark_rets.index)
-            if len(common_idx) == 0:
+            try:
+                # Align returns with benchmark
+                common_idx = self.returns.index.intersection(self.benchmark_rets.index)
+                if len(common_idx) == 0:
+                    return 1e6
+                
+                # Calculate portfolio returns
+                port_ret = np.dot(self.returns.loc[common_idx].values, w)
+                
+                # Get benchmark returns as numpy array
+                if isinstance(self.benchmark_rets, pd.Series):
+                    bench_ret = self.benchmark_rets.loc[common_idx].values
+                else:
+                    bench_ret = np.array(self.benchmark_rets)
+                
+                # Calculate active returns
+                active = port_ret - bench_ret
+                
+                # Calculate information ratio components
+                te = float(np.std(active) * np.sqrt(252))
+                active_ret = float(np.mean(active) * 252)
+                
+                if te < 1e-10:
+                    return 1e6
+                
+                # Return negative IR (since we minimize)
+                return float(-active_ret / te)
+            except Exception as e:
                 return 1e6
-            active = self.returns.loc[common_idx].dot(w) - self.benchmark_rets.loc[common_idx]
-            te = active.std() * np.sqrt(252)
-            ret = active.mean() * 252
-            return -(ret / (te + 1e-10))
         
         # Method mapping
         objectives = {
@@ -301,15 +354,15 @@ class Optimizer:
     def get_risk_contributions(self, weights: Dict[str, float]) -> Dict[str, float]:
         """Calculate risk contributions for each asset."""
         w = np.array([weights[t] for t in self.tickers])
-        port_vol = np.sqrt(np.dot(w.T, np.dot(self.cov_matrix, w)))
+        port_vol = float(np.sqrt(np.dot(w.T, np.dot(self.cov_matrix.values, w))))
         
         if port_vol < 1e-10:
             return {t: 0.0 for t in self.tickers}
         
-        mrc = np.dot(self.cov_matrix, w) / port_vol
+        mrc = np.dot(self.cov_matrix.values, w) / port_vol
         risk_contrib = w * mrc
         
-        return dict(zip(self.tickers, risk_contrib))
+        return {t: float(rc) for t, rc in zip(self.tickers, risk_contrib)}
     
     def calculate_frontier(self, num_points: int = 25) -> Tuple[List[float], List[float]]:
         """Calculate efficient frontier for MVO methods."""
@@ -320,8 +373,8 @@ class Optimizer:
             w_max_sharpe = np.array(list(self.optimize("mvo_sharpe").values()))
             
             # Calculate return range
-            ret_min = np.sum(self.mean_rets * w_min_vol)
-            ret_max = np.sum(self.mean_rets * w_max_sharpe)
+            ret_min = float(np.sum(self.mean_rets.values * w_min_vol))
+            ret_max = float(np.sum(self.mean_rets.values * w_max_sharpe))
             
             # Extend range
             ret_range = ret_max - ret_min
@@ -341,12 +394,12 @@ class Optimizer:
                 temp_cons = self.cons.copy()
                 temp_cons.append({
                     'type': 'eq',
-                    'fun': lambda x, t=target: np.sum(self.mean_rets * x) - t
+                    'fun': lambda x, t=target: float(np.sum(self.mean_rets.values * x) - t)
                 })
                 
                 try:
                     res = minimize(
-                        lambda w: np.sqrt(np.dot(w.T, np.dot(self.cov_matrix, w))),
+                        lambda w: float(np.sqrt(np.dot(w.T, np.dot(self.cov_matrix.values, w)))),
                         self._get_start_guess(),
                         method='SLSQP',
                         bounds=self.bounds,
@@ -550,8 +603,16 @@ if run_button:
                 st.stop()
             
             bench_rets = None
-            if bench_series is not None:
+            if bench_series is not None and not bench_series.empty:
                 bench_rets = bench_series.pct_change().dropna()
+                
+                # Validate benchmark alignment
+                if method_key in ["tracking_error", "info_ratio"]:
+                    common_idx = returns.index.intersection(bench_rets.index)
+                    if len(common_idx) < 10:
+                        st.warning("⚠️ Insufficient overlapping data with benchmark. Using available data.")
+                    elif len(common_idx) < len(returns) * 0.5:
+                        st.warning(f"⚠️ Only {len(common_idx)} out of {len(returns)} data points overlap with benchmark.")
             
             # === SETUP OPTIMIZER ===
             constraints = {
